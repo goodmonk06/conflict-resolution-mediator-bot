@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 250, 250, 250;
+  --background-end-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+/* Markdown rendering */
+.markdown {
+  @apply prose prose-sm max-w-none;
+}
+
+.markdown h1 {
+  @apply text-2xl font-bold mt-6 mb-4;
+}
+
+.markdown h2 {
+  @apply text-xl font-semibold mt-5 mb-3;
+}
+
+.markdown h3 {
+  @apply text-lg font-medium mt-4 mb-2;
+}
+
+.markdown p {
+  @apply mb-3;
+}
+
+.markdown ul {
+  @apply list-disc list-inside mb-3;
+}
+
+.markdown ol {
+  @apply list-decimal list-inside mb-3;
+}
+
+.markdown code {
+  @apply bg-gray-100 px-1 py-0.5 rounded text-sm;
+}
+
+.markdown pre {
+  @apply bg-gray-100 p-3 rounded overflow-x-auto mb-3;
+}
+
+.markdown blockquote {
+  @apply border-l-4 border-gray-300 pl-4 italic my-3;
+}
+
+.markdown hr {
+  @apply border-t border-gray-300 my-4;
+}

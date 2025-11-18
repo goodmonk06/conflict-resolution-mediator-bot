@@ -1,0 +1,114 @@
+// Prisma schema for Conflict Resolution Mediator Bot
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Represents a conversation thread from a community platform
+model ConversationThread {
+  id               String   @id @default(cuid())
+  communityId      String   // External community/team identifier
+  externalThreadId String   // Thread ID from the source platform
+  sourceType       SourceType
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  conflictSignals  ConflictSignal[]
+  mediationCases   MediationCase[]
+
+  @@unique([communityId, externalThreadId])
+  @@index([communityId])
+  @@index([createdAt])
+}
+
+enum SourceType {
+  chat
+  forum
+}
+
+// Represents a detected conflict signal in a thread
+model ConflictSignal {
+  id              String       @id @default(cuid())
+  threadId        String
+  timestamp       DateTime     // When the conflict signal was detected
+  signalType      SignalType
+  summaryMarkdown String       @db.Text // AI-generated summary
+  score           Float        // Conflict intensity score (0.0 - 1.0)
+  metaJson        Json?        // Additional metadata (keywords, participants, etc.)
+  createdAt       DateTime     @default(now())
+
+  // Relations
+  thread          ConversationThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@index([signalType])
+  @@index([score])
+  @@index([timestamp])
+}
+
+enum SignalType {
+  potential   // Initial detection
+  escalated   // Conflict is getting worse
+  resolved    // Appears to be resolved
+}
+
+// Represents an active mediation case
+model MediationCase {
+  id                  String           @id @default(cuid())
+  threadId            String
+  status              CaseStatus
+  assignedMediatorRef String?          // Reference to mediator (could be user ID, email, etc.)
+  notesMarkdown       String?          @db.Text
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  // Relations
+  thread              ConversationThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  steps               MediationStep[]
+
+  @@index([threadId])
+  @@index([status])
+  @@index([assignedMediatorRef])
+  @@index([createdAt])
+}
+
+enum CaseStatus {
+  open
+  in_progress
+  resolved
+  dismissed
+}
+
+// Represents individual steps in a mediation process
+model MediationStep {
+  id                      String      @id @default(cuid())
+  caseId                  String
+  orderIndex              Int         // Order of this step in the sequence
+  actionType              ActionType
+  notesMarkdown           String?     @db.Text
+  suggestedMessageMarkdown String?    @db.Text // AI-generated suggestion
+  completedAt             DateTime?
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+
+  // Relations
+  case                    MediationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, orderIndex])
+  @@index([caseId])
+  @@index([completedAt])
+}
+
+enum ActionType {
+  reach_out      // Initial contact with parties
+  schedule_call  // Set up a synchronous conversation
+  clarify        // Clarify misunderstandings
+  reframe        // Reframe the discussion
+  agreement      // Document agreement/resolution
+}
