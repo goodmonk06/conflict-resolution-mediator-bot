@@ -17,6 +17,50 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - conflict-mediator-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    container_name: conflict-mediator-backend
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/conflict_mediator?schema=public
+      PORT: 3000
+      CORS_ORIGIN: http://localhost:3001
+      # Optional: Add your OpenAI API key
+      # OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # OPENAI_MODEL: gpt-4-turbo-preview
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - conflict-mediator-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+    container_name: conflict-mediator-frontend
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+    networks:
+      - conflict-mediator-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+
+networks:
+  conflict-mediator-network:
+    driver: bridge

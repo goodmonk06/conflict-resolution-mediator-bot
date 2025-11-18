@@ -64,18 +64,32 @@ model MediationCase {
   threadId            String
   status              CaseStatus
   assignedMediatorRef String?          // Reference to mediator (could be user ID, email, etc.)
+  priority            CasePriority     @default(medium)
   notesMarkdown       String?          @db.Text
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
+  closedAt            DateTime?
 
   // Relations
   thread              ConversationThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   steps               MediationStep[]
+  categories          CaseCategory[]
+  assignments         MediatorAssignment[]
+  resolution          Resolution?
 
   @@index([threadId])
   @@index([status])
+  @@index([priority])
   @@index([assignedMediatorRef])
   @@index([createdAt])
+  @@index([closedAt])
+}
+
+enum CasePriority {
+  low
+  medium
+  high
+  critical
 }
 
 enum CaseStatus {
@@ -111,4 +125,187 @@ enum ActionType {
   clarify        // Clarify misunderstandings
   reframe        // Reframe the discussion
   agreement      // Document agreement/resolution
+}
+
+// Represents a mediator's profile and capabilities
+model MediatorProfile {
+  id                String   @id @default(cuid())
+  externalUserId    String   @unique // ID from external auth system
+  email             String   @unique
+  name              String
+  bio               String?  @db.Text
+  skillsJson        Json?    // Array of skills/specializations
+  availability      AvailabilityStatus @default(available)
+  maxActiveCases    Int      @default(10)
+  languagesJson     Json?    // Supported languages
+  certifications    String?  @db.Text
+  performanceScore  Float?   // Average performance rating
+  totalCasesHandled Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  assignments       MediatorAssignment[]
+  auditLogs         AuditLog[]
+
+  @@index([availability])
+  @@index([email])
+}
+
+enum AvailabilityStatus {
+  available
+  busy
+  away
+  offline
+}
+
+// Represents a community's configuration and policies
+model CommunityProfile {
+  id                        String   @id @default(cuid())
+  externalCommunityId       String   @unique
+  name                      String
+  description               String?  @db.Text
+  autoCreateCaseThreshold   Float    @default(0.75) // Auto-create case if score >= this
+  escalationPolicy          String?  @db.Text
+  customRulesJson           Json?    // Custom detection rules
+  notificationSettingsJson  Json?    // Notification preferences
+  defaultMediatorId         String?  // Default mediator assignment
+  timezone                  String   @default("UTC")
+  activeConflictCount       Int      @default(0)
+  totalConflictsDetected    Int      @default(0)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@index([externalCommunityId])
+}
+
+// Reusable templates for common mediation workflows
+model MediationTemplate {
+  id                  String   @id @default(cuid())
+  name                String
+  description         String?  @db.Text
+  category            String?  // e.g., "technical-dispute", "interpersonal-conflict"
+  stepsJson           Json     // Array of step definitions
+  estimatedDuration   Int?     // Estimated minutes to complete
+  successRate         Float?   // Historical success rate
+  usageCount          Int      @default(0)
+  isActive            Boolean  @default(true)
+  createdById         String?  // Mediator who created it
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([category])
+  @@index([isActive])
+}
+
+// Taxonomy for conflict categorization
+model ConflictCategory {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  description     String?  @db.Text
+  parentId        String?  // For hierarchical categories
+  color           String?  // Hex color for UI
+  iconName        String?  // Icon identifier
+  detectionHints  String?  @db.Text // Keywords/patterns to help categorize
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  parent          ConflictCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children        ConflictCategory[] @relation("CategoryHierarchy")
+  caseCategories  CaseCategory[]
+
+  @@index([slug])
+  @@index([parentId])
+}
+
+// Junction table for MediationCase ↔ ConflictCategory (many-to-many)
+model CaseCategory {
+  id         String   @id @default(cuid())
+  caseId     String
+  categoryId String
+  confidence Float?   // Confidence in this categorization (0.0 - 1.0)
+  createdAt  DateTime @default(now())
+
+  // Relations
+  case       MediationCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  category   ConflictCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, categoryId])
+  @@index([caseId])
+  @@index([categoryId])
+}
+
+// Tracks resolution outcomes and follow-ups
+model Resolution {
+  id                      String           @id @default(cuid())
+  caseId                  String           @unique
+  outcome                 ResolutionOutcome
+  summaryMarkdown         String           @db.Text
+  participantSatisfaction Float?           // Average satisfaction (0.0 - 1.0)
+  followUpRequired        Boolean          @default(false)
+  followUpDate            DateTime?
+  lessonsLearnedMarkdown  String?          @db.Text
+  tagsJson                Json?            // Tags for searching/filtering
+  resolvedAt              DateTime         @default(now())
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  // Relations
+  case                    MediationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([outcome])
+  @@index([resolvedAt])
+  @@index([followUpRequired])
+}
+
+enum ResolutionOutcome {
+  agreement_reached     // Parties reached mutual agreement
+  partial_resolution    // Some issues resolved, others remain
+  escalated_externally  // Escalated to higher authority
+  no_resolution         // Could not be resolved
+  parties_withdrew      // Parties chose to disengage
+}
+
+// Assignment tracking with load balancing metadata
+model MediatorAssignment {
+  id           String   @id @default(cuid())
+  caseId       String
+  mediatorId   String
+  assignedAt   DateTime @default(now())
+  assignedBy   String?  // Who made the assignment (user ID or 'system')
+  acceptedAt   DateTime?
+  workloadScore Float?  // Relative workload at time of assignment
+  notes        String?  @db.Text
+
+  // Relations
+  case         MediationCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  mediator     MediatorProfile  @relation(fields: [mediatorId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([mediatorId])
+  @@index([assignedAt])
+}
+
+// Complete audit trail for compliance and accountability
+model AuditLog {
+  id          String   @id @default(cuid())
+  entityType  String   // e.g., "MediationCase", "ConflictSignal"
+  entityId    String   // ID of the affected entity
+  action      String   // e.g., "created", "updated", "deleted", "status_changed"
+  actorType   String   // e.g., "user", "system", "api"
+  actorId     String?  // ID of the actor (mediator, system process, etc.)
+  changes     Json?    // Before/after snapshot or description of changes
+  metadata    Json?    // Additional context (IP, user agent, etc.)
+  timestamp   DateTime @default(now())
+
+  // Relations
+  mediator    MediatorProfile? @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([timestamp])
+  @@index([action])
 }
